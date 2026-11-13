@@ -29,6 +29,7 @@
       <div class="nav-menu" id="nav-menu">
         <nav class="nav-links" aria-label="Sections">
           <a href="#how">How it works</a>
+          <a href="#stack">Under the hood</a>
           <a href="#markets">Markets</a>
           <a href="#proof">Proof</a>
           <a href="#faq">FAQ</a>
@@ -110,6 +111,98 @@
               <p class="step-text">Not filled by the opening bell? The order dies on its own. Nothing to cancel.</p>
             </li>
           </ol>
+        </div>
+      </section>
+
+      <section class="band stack" id="stack" aria-labelledby="stack-h">
+        <div class="wrap">
+          <header class="section-head split reveal">
+            <h2 id="stack-h">What's under the hood.</h2>
+            <p>Lastprint is a thin layer over public pieces on Base. Here is the path one order takes, and what each piece is there for.</p>
+          </header>
+
+          <ol class="flow reveal" aria-label="The path of one order">
+            <li class="flow-step">
+              <span class="flow-n">1</span>
+              <h3>Your wallet</h3>
+              <p>Approves exactly the order amount and signs the order offchain (EIP-712). Your money stays in your wallet.</p>
+            </li>
+            <li class="flow-step">
+              <span class="flow-n">2</span>
+              <h3>Lastprint keeper</h3>
+              <p>Holds the last official close, follows the NYSE calendar and asks the pool for a price every 5 seconds.</p>
+            </li>
+            <li class="flow-step">
+              <span class="flow-n">3</span>
+              <h3>ActionFeed</h3>
+              <p>The brake. If a split or dividend adjustment is about to land, the fill is refused.</p>
+            </li>
+            <li class="flow-step">
+              <span class="flow-n">4</span>
+              <h3>Lastprint contract</h3>
+              <p>Checks your signature, the time window and your minimum, then pulls the funds and swaps in one transaction.</p>
+            </li>
+            <li class="flow-step">
+              <span class="flow-n">5</span>
+              <h3>Aerodrome pool</h3>
+              <p>Where the trade happens. The stock token lands straight in your wallet, or the whole thing reverts.</p>
+            </li>
+          </ol>
+
+          <div class="parts reveal">
+            <h3 class="parts-h">The parts, and what each one does</h3>
+            <dl class="parts-list">
+              <div class="part">
+                <dt>Base</dt>
+                <dd>The chain everything runs on. Blocks every two seconds and cents of gas make an overnight limit order practical.</dd>
+                <dd class="part-link"><a href="https://base.org" rel="noopener">base.org</a></dd>
+              </div>
+              <div class="part">
+                <dt>Coinbase stock tokens (B20)</dt>
+                <dd>The asset you buy or sell, such as NVDAc. Each token carries a multiplier that changes on splits and dividends.</dd>
+                <dd class="part-link"><a href="https://basescan.org/address/0xb20000000000000000000078ee7ce2fE4908108C" rel="noopener">NVDAc on Basescan</a></dd>
+              </div>
+              <div class="part">
+                <dt>USDC</dt>
+                <dd>What you pay with when you buy and what you receive when you sell.</dd>
+                <dd class="part-link"><a href="https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" rel="noopener">USDC on Basescan</a></dd>
+              </div>
+              <div class="part">
+                <dt>LastprintOrders</dt>
+                <dd>Our contract. Verifies and fills signed orders. No owner, no admin key, no fees, holds no funds between fills.</dd>
+                <dd class="part-link"><a href="https://basescan.org/address/0x7def4bbDdCe5670485f513615Cd5cAD97bB27DB3" rel="noopener">Contract on Basescan</a></dd>
+              </div>
+              <div class="part">
+                <dt>Aerodrome Slipstream</dt>
+                <dd>The liquidity. The keeper reads prices from its MetaQuoter, and the contract swaps only through its SwapRouter, the single router allowed at deployment.</dd>
+                <dd class="part-link"><a href="https://basescan.org/address/0x9Ee35Bf1bd69a03c6F0393582030fCe8Bb93D418" rel="noopener">SwapRouter on Basescan</a></dd>
+              </div>
+              <div class="part">
+                <dt>ActionFeed</dt>
+                <dd>Corporate-action guard. Every fill calls it to confirm no multiplier change is due within a day, and that the order was signed against the current multiplier.</dd>
+                <dd class="part-link"><a href="https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2" rel="noopener">ActionFeed on Basescan</a></dd>
+              </div>
+              <div class="part">
+                <dt>Keeper</dt>
+                <dd>Watches the pools and sends the fill when your price is reached. Open source, and filling is permissionless: anyone can run one with the same guarantees.</dd>
+                <dd class="part-link"><a href="https://github.com/itsolaph/lastprint" rel="noopener">Code on GitHub</a></dd>
+              </div>
+              <div class="part">
+                <dt>Yahoo Finance and Nasdaq.com</dt>
+                <dd>Where the last official close comes from. Yahoo's chart data first, Nasdaq.com as the fallback, with the session date shown next to every price.</dd>
+              </div>
+              <div class="part">
+                <dt>NYSE calendar</dt>
+                <dd>Trading hours, holidays and early closes for 2026 and 2027. It decides when an order is born and when it dies.</dd>
+                <dd class="part-link"><a href="https://www.nyse.com/markets/hours-calendars" rel="noopener">NYSE hours</a></dd>
+              </div>
+              <div class="part">
+                <dt>DexScreener</dt>
+                <dd>Pool depth on the board, for display only. It never touches an order.</dd>
+              </div>
+            </dl>
+            <p class="parts-note">Not used: a price oracle. Your limit becomes an exact minimum amount when you sign, so the contract never has to trust a price feed. Lastprint is independent and not affiliated with any of the projects above.</p>
+          </div>
         </div>
       </section>
 
