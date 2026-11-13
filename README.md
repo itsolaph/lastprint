@@ -4,7 +4,7 @@
 
 Lastprint gives you non-custodial limit orders for tokenized US stocks (Coinbase B20 tokens such as NVDAc) on Base. Each order is pegged to the **last official close**. It is live only while the US market is shut: overnight, weekends and US holidays. It expires automatically at the next opening bell. A keeper fills orders atomically on Aerodrome when the price is reached. [ActionFeed](https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2) acts as the safety brake for corporate actions.
 
-**Live app: [lastprint.trade](https://lastprint.trade)** (not available to US persons).
+**Live app: [lastprint.trade](https://lastprint.trade)** (not available to US persons). Contact: hello@lastprint.trade
 
 Lastprint is an independent project. It is not affiliated with Coinbase, Base, Aerodrome or Chainlink. It does not pick stocks or give advice, holds no funds, and has no token, points or fees.
 
