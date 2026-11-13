@@ -4,6 +4,8 @@
 
 Lastprint gives you non-custodial limit orders for tokenized US stocks (Coinbase B20 tokens such as NVDAc) on Base. Each order is pegged to the **last official close**. It is live only while the US market is shut: overnight, weekends and US holidays. It expires automatically at the next opening bell. A keeper fills orders atomically on Aerodrome when the price is reached. [ActionFeed](https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2) acts as the safety brake for corporate actions.
 
+**Live app: [lastprint.trade](https://lastprint.trade)** (not available to US persons).
+
 Lastprint is an independent project. It is not affiliated with Coinbase, Base, Aerodrome or Chainlink. It does not pick stocks or give advice, holds no funds, and has no token, points or fees.
 
 ![Lastprint landing page, first viewport at 1440 px](docs/screens/v3-hero-1440x900.png)
@@ -141,6 +143,7 @@ The router allowlist is permanent: list only swap routers (see the threat model)
 
 | What | Value |
 |---|---|
+| App | [lastprint.trade](https://lastprint.trade) |
 | `LastprintOrders` | `0x7def4bbDdCe5670485f513615Cd5cAD97bB27DB3` |
 | Deploy block | 56929424 |
 | Source verification | Sourcify (`forge verify-contract … --verifier sourcify`) |
@@ -153,7 +156,7 @@ The first real order filled on mainnet: 5 USDC for NVDAc at a limit of $170 per 
 
 A stub manifest is served at `/.well-known/farcaster.json`. To finalize it:
 
-1. Replace `REPLACE_WITH_DOMAIN` with the production domain, and add a 1200×630 `og.png` and a 1024×1024 PNG icon (the stub points at the SVG favicon).
+1. The manifest points at `lastprint.trade`. Add a 1200×630 `og.png` and a 1024×1024 PNG icon (the stub points at the SVG favicon).
 2. Generate `accountAssociation` (`header`, `payload`, `signature`) for that domain with the Farcaster/Base developer tools, signed by the account that owns the app.
 3. Remove `"noindex": true` when ready to be listed.
 
