@@ -1,0 +1,6 @@
+packages:
+  - keeper
+
+# esbuild ships its platform binary as an optional dependency; its postinstall script is not needed.
+allowBuilds:
+  esbuild: false

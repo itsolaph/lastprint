@@ -1,0 +1,31 @@
+# Private working notes
+BRIEF.md
+PROGRESS.md
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+*.log
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Keeper runtime data
+keeper/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Generated report artifacts
+keeper/reports/
+
+# OS
+.DS_Store
+contracts/lib/
+.gitmodules

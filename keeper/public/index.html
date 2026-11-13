@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lastprint · limit orders against the last close</title>
+    <meta name="description" content="Non-custodial limit orders for tokenized US stocks on Base, priced against the last official close, live only while the US market is shut." />
+    <meta name="theme-color" content="#f3f4f0" />
+    <link rel="preload" href="/fonts/geist-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/css/app.css" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div class="tape frozen" id="tape" role="marquee" aria-label="Base prices against the last official close">
+      <div class="tape-track" id="tape-track"><span class="print"><span class="k">Loading prints</span></span></div>
+    </div>
+    <p class="state" id="state" aria-live="polite"><span><span class="dot"></span>Reading the market clock</span></p>
+
+    <header class="masthead">
+      <div>
+        <h1 class="wordmark">Lastprint<span class="bar" aria-hidden="true"></span></h1>
+        <p class="pitch"><strong>NYSE closes. Base doesn't.</strong> Set the price you want relative to the last close. Your order only fires while Wall Street is asleep, and expires at the next opening bell.</p>
+      </div>
+      <div class="wallet">
+        <span class="addr" id="wallet-addr"></span>
+        <button class="btn" id="connect" type="button">Connect wallet</button>
+      </div>
+    </header>
+
+    <p class="notice" id="notice" hidden></p>
+
+    <main class="layout">
+      <section class="markets" aria-labelledby="markets-h">
+        <div class="section-head">
+          <h2 id="markets-h">Markets</h2>
+          <p id="markets-sub">Last official close against the Aerodrome pool price on Base</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Ticker</th>
+              <th scope="col">Last close</th>
+              <th scope="col">Base <span class="col-mid-label">mid</span></th>
+              <th scope="col">Gap</th>
+              <th scope="col" class="col-depth">Pool depth</th>
+            </tr>
+          </thead>
+          <tbody id="markets-body">
+            <tr class="empty"><td colspan="5">Loading closes and pool prices…</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <aside class="ticket" id="ticket" aria-labelledby="ticket-h">
+        <div class="ticket-head">
+          <h2 id="ticket-h">Order ticket</h2>
+          <span class="serial" id="ticket-serial">On Base</span>
+        </div>
+        <form id="ticket-form" novalidate>
+          <div class="fields">
+            <div class="field">
+              <span class="lbl" id="side-lbl">Side</span>
+              <div class="side" role="radiogroup" aria-labelledby="side-lbl">
+                <input type="radio" name="side" id="side-buy" value="buy" checked /><label for="side-buy">Buy</label>
+                <input type="radio" name="side" id="side-sell" value="sell" /><label for="side-sell">Sell</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="f-ticker">Ticker</label>
+              <select id="f-ticker" name="ticker"></select>
+            </div>
+            <div class="field wide">
+              <label for="f-amount" id="amount-lbl">Amount (USDC)</label>
+              <input id="f-amount" name="amount" class="num" inputmode="decimal" autocomplete="off" placeholder="0.00" />
+              <span class="help" id="amount-help"></span>
+            </div>
+            <div class="field wide">
+              <label for="f-limit">Limit vs last close</label>
+              <div class="limit-row">
+                <input id="f-limit" name="limit" class="num" inputmode="decimal" autocomplete="off" value="-1.00" aria-describedby="limit-help" />
+                <span class="unit">%</span>
+              </div>
+              <span class="help" id="limit-help"></span>
+            </div>
+            <div class="field">
+              <span class="lbl">Expires</span>
+              <span class="value" id="f-expiry">Next opening bell</span>
+              <span class="help" id="f-expiry-local"></span>
+            </div>
+            <div class="field">
+              <span class="lbl">Bound to multiplier</span>
+              <span class="value" id="f-mult">–</span>
+              <span class="help">From ActionFeed</span>
+            </div>
+          </div>
+          <dl class="estimate">
+            <dt>You receive at least</dt>
+            <dd class="big" id="est-min">–</dd>
+            <dt>At the current Base price</dt>
+            <dd id="est-now">–</dd>
+            <dt>Your balance</dt>
+            <dd id="est-bal">–</dd>
+          </dl>
+          <div class="actions">
+            <div class="steps">
+              <button class="btn" type="button" id="btn-approve"><span class="step-n">1</span>Approve</button>
+              <button class="btn primary" type="submit" id="btn-sign"><span class="step-n">2</span>Sign order</button>
+            </div>
+            <p class="ticket-msg" id="ticket-msg" role="status"></p>
+          </div>
+        </form>
+        <div class="stamp" id="stamp" hidden></div>
+      </aside>
+    </main>
+
+    <section class="orders" aria-labelledby="orders-h">
+      <div class="section-head">
+        <h2 id="orders-h">My orders</h2>
+        <p id="orders-sub"></p>
+      </div>
+      <div id="orders"><p class="empty-orders">Connect a wallet to see your orders.</p></div>
+    </section>
+
+    <footer class="foot">
+      <div>
+        <p><strong>Experimental and unaudited.</strong> Smart contracts can fail; only use amounts you can afford to lose. Not available to U.S. persons or where prohibited. Nothing here is investment advice: Lastprint shows data and executes the order you sign. It never holds funds, charges no fees, and has no token.</p>
+        <p>Lastprint is an independent project and is not affiliated with Coinbase, Base, Aerodrome or Chainlink. Corporate-action guard by <a href="https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2" rel="noopener">ActionFeed</a>.</p>
+      </div>
+      <div>
+        <p>Closes: Yahoo Finance chart API, Nasdaq.com fallback. Pools: Aerodrome Slipstream on Base, depth from DexScreener.</p>
+        <p><a id="repo-link" href="https://github.com/itsolaph/lastprint" rel="noopener">Source on GitHub</a> · MIT license</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

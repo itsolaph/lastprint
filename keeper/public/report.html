@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1200" />
+    <meta name="robots" content="noindex" />
+    <title>Lastprint gap report</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <link rel="stylesheet" href="/css/report.css" />
+  </head>
+  <body class="report">
+    <div class="card" id="card">
+      <div class="tape live-static"><div class="tape-track" id="r-tape"></div></div>
+      <div class="r-head">
+        <div>
+          <h1 class="wordmark">Lastprint<span class="bar" aria-hidden="true"></span></h1>
+          <p class="r-title" id="r-title">Base vs last close</p>
+        </div>
+        <p class="r-when" id="r-when"></p>
+      </div>
+      <ol class="r-rows" id="r-rows"></ol>
+      <p class="r-foot" id="r-foot">Mid prices from Aerodrome pools on Base. Closes from Yahoo Finance. Data only, not advice.</p>
+    </div>
+    <script type="module" src="/js/report.js"></script>
+  </body>
+</html>
