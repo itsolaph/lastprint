@@ -30,6 +30,7 @@ interface AppConfig {
   keeperMode: 'send' | 'watch' | 'off';
   telegramBot: string | null;
   repoUrl: string;
+  restricted?: boolean;
 }
 
 interface OrderView {
@@ -624,6 +625,7 @@ function gate(c: TicketCalc | null): Gate {
   const cfg = state.config;
   const now = Date.now();
   if (!cfg?.orderingEnabled) return { kind: 'none', reason: 'Ordering is off on this instance: no contract is configured. Markets and gaps are live.' };
+  if (cfg.restricted) return { kind: 'none', reason: 'Lastprint is not available in the United States.' };
   let open = false;
   try {
     open = isUsMarketOpen(now);
@@ -705,7 +707,7 @@ function renderTicket(): void {
   const approve = $<HTMLButtonElement>('btn-approve');
   const sign = $<HTMLButtonElement>('btn-sign');
   const ticket = $('ticket');
-  ticket.classList.toggle('disabled', g.kind === 'none' && !state.busy && (!state.config?.orderingEnabled || safeOpen(now)));
+  ticket.classList.toggle('disabled', g.kind === 'none' && !state.busy && (!state.config?.orderingEnabled || !!state.config?.restricted || safeOpen(now)));
   approve.disabled = state.busy || g.kind !== 'approve';
   approve.classList.toggle('primary', g.kind === 'approve');
   sign.disabled = state.busy || !(g.kind === 'sign' || g.kind === 'connect' || g.kind === 'switch');
@@ -729,6 +731,10 @@ function renderTicket(): void {
     notice.hidden = false;
     notice.className = 'notice';
     notice.textContent = 'Read-only: this instance has no Lastprint contract configured, so ordering is off. Closes, Base prices and gaps are live.';
+  } else if (state.config?.restricted) {
+    notice.hidden = false;
+    notice.className = 'notice warn';
+    notice.textContent = 'Lastprint is not available to US persons or in the US. You can still browse closes and Base prices.';
   } else if (state.snapError && !state.snap) {
     notice.hidden = false;
     notice.className = 'notice warn';

@@ -168,4 +168,4 @@ A stub manifest is served at `/.well-known/farcaster.json`. To finalize it:
 
 ## Disclaimer
 
-Experimental software, provided as is under the MIT license. It is not available to U.S. persons or where prohibited. Nothing here is investment advice. Gap figures are descriptive data: "trades X% below last close" is a measurement, not a recommendation.
+Experimental software, provided as is under the MIT license. It is not available to U.S. persons or where prohibited: the keeper refuses orders from US locations (Cloudflare `cf-ipcountry`: US, PR, GU, VI, AS, MP, UM) with HTTP 451, and the app keeps the ticket read-only there. Nothing here is investment advice. Gap figures are descriptive data: "trades X% below last close" is a measurement, not a recommendation.

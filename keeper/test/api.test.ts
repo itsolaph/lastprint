@@ -66,6 +66,25 @@ function setup(enabled: boolean) {
 }
 
 describe('HTTP API', () => {
+  it('refuses orders from the US and its territories, and says so in config', async () => {
+    const { app } = setup(true);
+    const json = { 'content-type': 'application/json' };
+    for (const cc of ['US', 'us', 'PR']) {
+      const cfg = await (await app.request('/v1/config', { headers: { 'cf-ipcountry': cc } })).json();
+      assert.equal(cfg.restricted, true, cc);
+      const r = await app.request('/v1/orders', { method: 'POST', body: '{}', headers: { ...json, 'cf-ipcountry': cc } });
+      assert.equal(r.status, 451, cc);
+      assert.match((await r.json()).error, /not available/);
+    }
+    const others: Record<string, string>[] = [{ 'cf-ipcountry': 'ID' }, { 'cf-ipcountry': 'XX' }, {}];
+    for (const h of others) {
+      const cfg = await (await app.request('/v1/config', { headers: h })).json();
+      assert.equal(cfg.restricted, false);
+      const r = await app.request('/v1/orders', { method: 'POST', body: '{}', headers: { ...json, ...h } });
+      assert.notEqual(r.status, 451);
+    }
+  });
+
   it('read-only mode: markets served, ordering disabled with a plain message', async () => {
     const { app } = setup(false);
     const cfg = await (await app.request('/v1/config')).json();

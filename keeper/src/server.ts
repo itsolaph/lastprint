@@ -119,9 +119,23 @@ function rateLimiter(max: number, windowMs: number) {
   };
 }
 
+/** US and its territories. Lastprint is not offered to US persons. */
+export const RESTRICTED_COUNTRIES = new Set(['US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM']);
+
+/** ISO country of the visitor as set by the edge proxy (Cloudflare `cf-ipcountry`), or null if unknown. */
+export function visitorCountry(c: Context): string | null {
+  const v = c.req.header('cf-ipcountry')?.trim().toUpperCase();
+  return v && /^[A-Z]{2}$/.test(v) ? v : null;
+}
+
+export function isRestricted(c: Context): boolean {
+  const cc = visitorCountry(c);
+  return cc !== null && RESTRICTED_COUNTRIES.has(cc);
+}
+
 function clientIp(c: Context): string {
-  // Loopback by default. Behind a reverse proxy, the proxy should set x-real-ip.
-  return c.req.header('x-real-ip') ?? (c.env as { incoming?: { socket?: { remoteAddress?: string } } })?.incoming?.socket?.remoteAddress ?? 'local';
+  // Loopback by default. Behind Cloudflare the edge sets cf-connecting-ip; other proxies should set x-real-ip.
+  return c.req.header('cf-connecting-ip') ?? c.req.header('x-real-ip') ?? (c.env as { incoming?: { socket?: { remoteAddress?: string } } })?.incoming?.socket?.remoteAddress ?? 'local';
 }
 
 export function createApp(d: ServerDeps): Hono {
@@ -159,6 +173,7 @@ export function createApp(d: ServerDeps): Hono {
       keeperMode: d.keeperMode,
       telegramBot: d.telegramBot,
       repoUrl: d.cfg.repoUrl,
+      restricted: isRestricted(c),
     }),
   );
 
@@ -169,6 +184,7 @@ export function createApp(d: ServerDeps): Hono {
   });
 
   app.post('/v1/orders', async (c) => {
+    if (isRestricted(c)) return c.json({ error: 'Lastprint is not available to US persons or in the US.' }, 451);
     if (!d.intake) return c.json({ error: 'Ordering is not enabled on this instance (no contract configured).' }, 503);
     if (!allowWrite(clientIp(c), now())) return c.json({ error: 'Too many requests. Slow down.' }, 429);
     let body: unknown;
