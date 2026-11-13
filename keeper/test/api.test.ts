@@ -126,6 +126,28 @@ describe('HTTP API', () => {
     assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   });
 
+  it('static server serves the landing photos and answers byte ranges for the hero video', async () => {
+    const { app } = setup(false);
+    const jpg = await app.request('/img/hero.jpg');
+    assert.equal(jpg.status, 200);
+    assert.equal(jpg.headers.get('content-type'), 'image/jpeg');
+    assert.equal((await app.request('/img/dusk.webp')).headers.get('content-type'), 'image/webp');
+
+    const whole = await app.request('/img/hero-loop.mp4');
+    assert.equal(whole.status, 200);
+    assert.equal(whole.headers.get('content-type'), 'video/mp4');
+    assert.equal(whole.headers.get('accept-ranges'), 'bytes');
+    const size = (await whole.arrayBuffer()).byteLength;
+
+    const part = await app.request('/img/hero-loop.mp4', { headers: { range: 'bytes=0-99' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), `bytes 0-99/${size}`);
+    assert.equal((await part.arrayBuffer()).byteLength, 100);
+    const tail = await app.request('/img/hero-loop.mp4', { headers: { range: 'bytes=-10' } });
+    assert.equal(tail.headers.get('content-range'), `bytes ${size - 10}-${size - 1}/${size}`);
+    assert.equal((await app.request('/img/hero-loop.mp4', { headers: { range: `bytes=${size}-` } })).status, 416);
+  });
+
   it('rejects oversized bodies', async () => {
     const { app } = setup(true);
     const big = JSON.stringify({ order: {}, signature: '0x' + '00'.repeat(40_000) });

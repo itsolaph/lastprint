@@ -16,9 +16,10 @@ import {
 import { base } from 'viem/chains';
 import { erc20Abi, lastprintAbi } from '../src/abis.ts';
 import { CANCEL_TYPES, ORDER_TYPES, makeNonce, orderDomain, orderToJson, type Order } from '../src/shared/eip712.ts';
-import { closedWindow, currentSession, isUsMarketOpen, marketState, nextSession } from '../src/shared/market-clock.ts';
+import { closedWindow, currentSession, isUsMarketOpen, marketState, nextSession, type MarketState } from '../src/shared/market-clock.ts';
 import { MAX_LIMIT_BPS, WAD, formatFixed, limitPerShareE8, minAmountOutFor, parseDecimal, type Side } from '../src/shared/pricing.ts';
 import type { MarketSnapshot, Snapshot } from '../src/snapshot.ts';
+import { countUp, initSite, onceVisible } from './site.ts';
 
 // ------------------------------------------------------------------------------------------ types & state
 
@@ -50,13 +51,26 @@ interface OrderView {
   note: string | null;
 }
 
+/** GET /v1/stats. */
+interface StatsView {
+  ordersCreated: number;
+  fills: number;
+  volumeUsd: number;
+  uniqueMakers: number;
+  source: string;
+}
+
 const BASE_CHAIN_HEX = '0x2105';
 const MIN_ORDER_USD = 5;
+/** Rows of the board shown before "Show all". */
+const BOARD_PREVIEW = 8;
 
 const state = {
   config: null as AppConfig | null,
   snap: null as Snapshot | null,
   snapError: null as string | null,
+  stats: null as StatsView | null,
+  statsFailed: false,
   provider: null as EIP1193Provider | null,
   account: null as Address | null,
   chainId: null as number | null,
@@ -91,8 +105,13 @@ function fmt(n: number, dp = 2): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }).replace('-', MINUS);
 }
 function fmtPct(p: number): string {
-  const s = p > 0 ? '+' : p < 0 ? MINUS : '';
-  return `${s}${Math.abs(p).toFixed(2)}%`;
+  const dir = gapDir(p);
+  return `${dir === 'up' ? '+' : dir === 'down' ? MINUS : ''}${Math.abs(p).toFixed(2)}%`;
+}
+/** Direction of a gap as it will be printed: anything that rounds to 0.00% is flat. */
+function gapDir(p: number | null): 'up' | 'down' | '' {
+  if (p === null || Math.abs(p) < 0.005) return '';
+  return p > 0 ? 'up' : 'down';
 }
 function fmtCompactUsd(v: number): string {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
@@ -106,6 +125,15 @@ const etFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', w
 const etTimeFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const localFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZoneName: 'short' });
 const etDayFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', day: 'numeric', month: 'short' });
+const etBellFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true });
+const localTimeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+/** New York wall time the way the page talks about bells: "4:00 pm", or "4 pm" when short. */
+function bellLabel(ms: number, short = false): string {
+  const parts = etBellFmt.formatToParts(ms);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  const minute = part('minute');
+  return `${part('hour')}${short && minute === '00' ? '' : `:${minute}`} ${part('dayPeriod').toLowerCase()}`;
+}
 function etLabel(ms: number): string {
   return `${etFmt.format(ms).replace(',', '')} ET`;
 }
@@ -159,111 +187,265 @@ function market(): MarketSnapshot | undefined {
 
 // ------------------------------------------------------------------------------------------ tape & clock
 
-let tapeKey = '';
+function setText(el: HTMLElement, text: string): void {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+/** Write a value; when it replaces an earlier value, it ticks (a short fade and rise) so the change is visible. */
+function setNum(el: HTMLElement, text: string): void {
+  if (el.textContent === text) return;
+  const first = el.textContent === '';
+  el.textContent = text;
+  if (first) return;
+  el.classList.remove('tick');
+  void el.offsetWidth;
+  el.classList.add('tick');
+}
+
+interface TapePrint {
+  price: HTMLElement;
+  gap: HTMLElement;
+  dir: HTMLElement;
+  pct: HTMLElement;
+}
+let tapeTickers = '';
+const tapePrints = new Map<string, TapePrint[]>();
+
+/** The hero paper tape: ticker, last official close, and the gap to the live Base mid. */
 function renderTape(): void {
   const tape = $('tape');
   const track = $('tape-track');
-  const open = isUsMarketOpen(Date.now());
+  const open = safeOpen(Date.now());
   tape.classList.toggle('live', !open);
   tape.classList.toggle('frozen', open);
   const rows = (state.snap?.markets ?? []).filter((m) => m.lastClose && m.base);
-  const key = rows.map((m) => `${m.ticker}${m.lastClose!.price}${m.base!.midPerShare.toFixed(2)}`).join('|');
-  if (key === tapeKey) return;
-  tapeKey = key;
   if (rows.length === 0) {
-    track.replaceChildren(h('span', { class: 'print' }, h('span', { class: 'k' }, state.snapError ?? 'Loading prints')));
+    // The first-paint skeleton stays until the first answer arrives.
+    if (state.snap || state.snapError) {
+      tapeTickers = '';
+      tapePrints.clear();
+      track.replaceChildren(h('span', { class: 'tape-note' }, state.snapError ?? 'No prints right now'));
+    }
     return;
   }
-  const prints = () =>
-    rows.map((m) => {
-      const g = m.gapPct ?? 0;
-      return h(
-        'span',
-        { class: 'print' },
-        h('span', { class: 't' }, m.ticker),
-        h('span', { class: 'k' }, 'last'),
-        h('span', {}, fmt(Number(m.lastClose!.price))),
-        h('span', { class: 'k' }, 'base'),
-        h('span', {}, fmt(m.base!.midPerShare)),
-        h('span', { class: `g ${g < 0 ? 'down' : g > 0 ? 'up' : ''}` }, fmtPct(g)),
-      );
-    });
-  // Two copies so the CSS loop (translateX -50%) is seamless.
-  track.replaceChildren(...prints(), ...prints());
-  track.style.setProperty('--tape-duration', `${Math.max(30, rows.length * 6)}s`);
-  tape.setAttribute('aria-label', `Base prices against the last official close: ${rows.map((m) => `${m.ticker} ${fmtPct(m.gapPct ?? 0)}`).join(', ')}`);
+  // Keyed: the strip is rebuilt only when the list of tickers changes; values are updated in place.
+  const tickers = rows.map((m) => m.ticker).join(',');
+  if (tickers !== tapeTickers) {
+    tapeTickers = tickers;
+    tapePrints.clear();
+    const copy = (decorative: boolean) =>
+      rows.map((m) => {
+        const price = h('span', { class: 'v' });
+        const dir = h('span', { class: 'visually-hidden' });
+        const pct = h('span', { class: 'v' });
+        const gap = h('span', { class: 'g' }, h('span', { class: 'tri' }), dir, pct);
+        const prints = tapePrints.get(m.ticker) ?? [];
+        prints.push({ price, gap, dir, pct });
+        tapePrints.set(m.ticker, prints);
+        return h('span', { class: 'print', 'aria-hidden': decorative ? 'true' : undefined }, h('span', { class: 't' }, m.ticker), price, gap);
+      });
+    // Two copies so the CSS loop (translateX -50%) is seamless.
+    track.replaceChildren(...copy(false), ...copy(true));
+    track.style.setProperty('--tape-duration', `${Math.max(40, rows.length * 7)}s`);
+  }
+  for (const m of rows) {
+    const g = m.gapPct ?? 0;
+    const d = gapDir(g);
+    for (const p of tapePrints.get(m.ticker) ?? []) {
+      setNum(p.price, fmt(Number(m.lastClose!.price)));
+      setNum(p.pct, `${Math.abs(g).toFixed(2)}%`);
+      setText(p.dir, d ? `${d} ` : '');
+      p.gap.className = `g ${d}`.trim();
+    }
+  }
 }
 
+/** The hero live line, plus the timeline step that matches the market clock. */
 function renderClock(): void {
   const now = Date.now();
   const el = $('state');
-  let ms;
+  let ms: MarketState;
   try {
     ms = marketState(now);
   } catch {
-    el.replaceChildren(h('span', {}, 'The market calendar does not cover today. Ordering is disabled.'));
+    setText(el, 'The market calendar does not cover today. Ordering is disabled.');
     return;
   }
   el.classList.toggle('closed', !ms.open);
   if (ms.open) {
-    const close = currentSession(now)!.close;
-    el.replaceChildren(
-      h('span', {}, h('span', { class: 'dot' }), `US market open · closes in ${fmtDuration(close - now)}`),
-      h('span', { class: 'when' }, `(${etTimeFmt.format(close)} ET / ${localLabel(close)}). Ordering reopens at the close; the tape is frozen.`),
-    );
+    setText(el, `US market open. Orders paused until the ${bellLabel(ms.nextClose, true)} close.`);
   } else {
     const why = ms.reason && ms.reason !== 'Overnight' && ms.reason !== 'Weekend' ? ` for ${ms.reason}` : '';
-    el.replaceChildren(
-      h('span', {}, h('span', { class: 'dot' }), `US market closed${why} · opens in ${fmtDuration(ms.nextOpen - now)}`),
-      h('span', { class: 'when' }, `(${etLabel(ms.nextOpen)} / ${localLabel(ms.nextOpen)})`),
-    );
+    setText(el, `US market closed${why}. Opens in ${fmtDuration(ms.nextOpen - now)}.`);
   }
+  renderTimeline(now, ms);
   const tape = $('tape');
   if (tape.classList.contains('live') === ms.open) renderTape();
 }
 
-// ------------------------------------------------------------------------------------------ markets table
+/** Real bells for the three panels: the close that starts the window, the open that ends it, in the viewer's time too. */
+function renderTimeline(now: number, ms: MarketState): void {
+  const closeAt = ms.open ? ms.nextClose : ms.lastClose;
+  const openAt = ms.nextOpen;
+  const where = (t: number) => (etTimeFmt.format(t) === localTimeFmt.format(t) ? 'New York time' : `New York time, ${localLabel(t)} where you are`);
+  setText($('step-close-time'), bellLabel(closeAt));
+  setText($('step-close-local'), where(closeAt));
+  setText($('step-open-time'), bellLabel(openAt));
+  setText($('step-open-local'), where(openAt));
+  setText($('step-night-local'), `${ms.open ? 'The next window' : 'This window'} lasts ${fmtDuration(openAt - closeAt)}`);
+  $('step-close').classList.toggle('is-now', ms.open);
+  $('step-night').classList.toggle('is-now', !ms.open);
+  setText($('step-close-flag'), ms.open ? `Next, in ${fmtDuration(closeAt - now)}` : '');
+  setText($('step-night-flag'), ms.open ? '' : `Now, for another ${fmtDuration(openAt - now)}`);
+}
+
+// ------------------------------------------------------------------------------------------ the board
+
+interface BoardRow {
+  tr: HTMLElement;
+  pick: HTMLElement;
+  close: HTMLElement;
+  src: HTMLElement;
+  base: HTMLElement;
+  gapCell: HTMLElement;
+  gap: HTMLElement;
+  depth: HTMLElement;
+}
+let boardTickers = '';
+let boardExpanded = false;
+const boardRows = new Map<string, BoardRow>();
+
+function boardMessage(text: string): void {
+  boardTickers = '';
+  boardRows.clear();
+  $('markets-body').replaceChildren(h('tr', {}, h('td', { class: 'message', colspan: '5' }, text)));
+  $('board-more').hidden = true;
+}
 
 function renderMarkets(): void {
-  const body = $('markets-body');
   const snap = state.snap;
   if (!snap) {
-    body.replaceChildren(h('tr', { class: 'empty' }, h('td', { colspan: '5' }, state.snapError ?? 'Loading closes and pool prices…')));
+    // The first-paint skeleton stays until the first answer arrives.
+    if (state.snapError) boardMessage(state.snapError);
     return;
   }
   if (snap.markets.length === 0) {
-    body.replaceChildren(h('tr', { class: 'empty' }, h('td', { colspan: '5' }, 'No markets are configured. Run the markets refresh script.')));
+    boardMessage('No markets are configured. Run the markets refresh script.');
     return;
   }
-  body.replaceChildren(
-    ...snap.markets.map((m) => {
-      const g = m.gapPct;
-      const tr = h(
-        'tr',
-        { class: m.ticker === state.ticker ? 'selected' : '' },
-        h(
-          'td',
-          {},
-          h(
-            'button',
-            { class: 'pick', type: 'button', 'aria-pressed': String(m.ticker === state.ticker), 'data-ticker': m.ticker },
-            h('span', { class: 't' }, m.ticker),
-            h('span', { class: 'n' }, m.name),
-          ),
-        ),
-        h(
-          'td',
-          { class: 'num' },
-          m.lastClose ? fmt(Number(m.lastClose.price)) : h('span', { class: 'muted' }, 'n/a'),
-          m.lastClose ? h('span', { class: 'src col-src' }, `${m.lastClose.source === 'yahoo' ? 'Yahoo' : 'Nasdaq'}, ${sessionDay(m.lastClose.sessionDate)}${m.lastClose.final ? '' : ', provisional'}`) : null,
-        ),
-        h('td', { class: 'num' }, m.base ? fmt(m.base.midPerShare) : h('span', { class: 'muted' }, 'n/a')),
-        h('td', { class: `num gap ${g === null ? '' : g < 0 ? 'down' : g > 0 ? 'up' : ''}` }, g === null ? '–' : fmtPct(g)),
-        h('td', { class: 'num col-depth' }, m.depthUsd ? fmtCompactUsd(m.depthUsd) : '–'),
-      );
-      return tr;
-    }),
+  // Keyed: rows are built once per list of tickers, then only their values change, so hover and focus survive a refresh.
+  const tickers = snap.markets.map((m) => m.ticker).join(',');
+  if (tickers !== boardTickers) {
+    boardTickers = tickers;
+    boardRows.clear();
+    $('markets-body').replaceChildren(
+      ...snap.markets.map((m, i) => {
+        const pick = h('button', { class: 'pick', type: 'button', 'data-ticker': m.ticker }, h('span', { class: 't' }, m.ticker), h('span', { class: 'n' }, m.name));
+        const close = h('span', { class: 'v' });
+        const src = h('span', { class: 'src' });
+        const base = h('span', { class: 'v' });
+        const gap = h('span', { class: 'v' });
+        const depth = h('span', { class: 'v' });
+        const gapCell = h('td', { class: 'num gap' }, gap);
+        const tr = h(
+          'tr',
+          { class: i >= BOARD_PREVIEW ? 'extra' : '', 'data-ticker': m.ticker },
+          h('td', { class: 'stock' }, pick),
+          h('td', { class: 'num close', 'data-label': 'Close' }, close, src),
+          h('td', { class: 'num base', 'data-label': 'Base' }, base),
+          gapCell,
+          h('td', { class: 'num depth', 'data-label': 'Depth' }, depth),
+        );
+        boardRows.set(m.ticker, { tr, pick, close, src, base, gapCell, gap, depth });
+        return tr;
+      }),
+    );
+  }
+  for (const m of snap.markets) {
+    const r = boardRows.get(m.ticker);
+    if (!r) continue;
+    const selected = m.ticker === state.ticker;
+    r.tr.classList.toggle('selected', selected);
+    r.pick.setAttribute('aria-pressed', String(selected));
+    setNum(r.close, m.lastClose ? `$${fmt(Number(m.lastClose.price))}` : 'n/a');
+    r.close.classList.toggle('dim', !m.lastClose);
+    setText(r.src, m.lastClose ? `${m.lastClose.source === 'yahoo' ? 'Yahoo' : 'Nasdaq'}, ${sessionDay(m.lastClose.sessionDate)}${m.lastClose.final ? '' : ', provisional'}` : '');
+    setNum(r.base, m.base ? `$${fmt(m.base.midPerShare)}` : 'n/a');
+    r.base.classList.toggle('dim', !m.base);
+    setNum(r.gap, m.gapPct === null ? '–' : fmtPct(m.gapPct));
+    r.gapCell.className = `num gap ${gapDir(m.gapPct)}`.trim();
+    setNum(r.depth, m.depthUsd ? fmtCompactUsd(m.depthUsd) : '–');
+  }
+
+  const more = $('board-more');
+  more.hidden = snap.markets.length <= BOARD_PREVIEW;
+  setText(more, boardExpanded ? 'Show fewer' : `Show all ${snap.markets.length} stocks`);
+  more.setAttribute('aria-expanded', String(boardExpanded));
+  $('board-table').classList.toggle('collapsed', !boardExpanded);
+
+  const session = snap.markets.find((m) => m.lastClose)?.lastClose?.sessionDate;
+  setText(
+    $('board-note'),
+    `${session ? `Closes are from the ${sessionDay(session)} session. ` : ''}Base prices refreshed at ${localTimeFmt.format(snap.updatedAt)} your time. Pick a stock to load it into the order ticket.`,
   );
+}
+
+/** Load a stock into the ticket; from the board this also brings the ticket into view. */
+function selectTicker(ticker: string, bringTicket: boolean): void {
+  state.ticker = ticker;
+  renderMarkets();
+  renderTicker();
+  renderTicket();
+  void refreshFunds();
+  if (!bringTicket) return;
+  // Side by side on wide screens (scroll to the section); stacked on narrow ones (scroll to the ticket itself).
+  const stacked = window.matchMedia('(max-width: 1000px)').matches;
+  const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $(stacked ? 'ticket' : 'app').scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) $('f-amount').focus({ preventScroll: true });
+}
+
+// ------------------------------------------------------------------------------------------ proof stats
+
+let statsVisible = false;
+let statsCounted = false;
+
+async function loadStats(): Promise<void> {
+  try {
+    state.stats = await getJson<StatsView>('/v1/stats');
+    state.statsFailed = false;
+  } catch {
+    state.statsFailed = true;
+  }
+  renderStats();
+}
+
+/** Real numbers from /v1/stats. They count up once, the first time the section is on screen; later changes tick. */
+function renderStats(): void {
+  const s = state.stats;
+  const cells: Array<[string, number | null, (n: number) => string]> = [
+    ['stat-orders', s?.ordersCreated ?? null, fmtCount],
+    ['stat-fills', s?.fills ?? null, fmtCount],
+    ['stat-volume', s?.volumeUsd ?? null, (n) => `$${n.toLocaleString('en-US', { maximumFractionDigits: s && !Number.isInteger(s.volumeUsd) ? 2 : 0 })}`],
+    ['stat-makers', s?.uniqueMakers ?? null, fmtCount],
+  ];
+  if (!s) {
+    // Skeleton while loading; a plain dash if the numbers cannot be read.
+    if (state.statsFailed) for (const [id] of cells) $(id).textContent = '–';
+    return;
+  }
+  if (!statsVisible) return;
+  for (const [id, value, format] of cells) {
+    if (value === null) continue;
+    if (statsCounted) setNum($(id), format(value));
+    else countUp($(id), value, format);
+  }
+  statsCounted = true;
+  setText($('stats-source'), s.source ? `${s.source.charAt(0).toUpperCase()}${s.source.slice(1)}.` : '');
+}
+
+function fmtCount(n: number): string {
+  return Math.round(n).toLocaleString('en-US');
 }
 
 function renderTicker(): void {
@@ -710,9 +892,7 @@ function renderOrders(): void {
     const inSym = o.side === 'buy' ? 'USDC' : (m?.symbol ?? o.ticker);
     const outSym = o.side === 'buy' ? (m?.symbol ?? o.ticker) : 'USDC';
     const amtIn = `${fmtUnits(BigInt(o.amountIn), inDec, inDec === 6 ? 2 : 4)} ${inSym}`;
-    const amtOut = o.amountOut
-      ? `${fmtUnits(BigInt(o.amountOut), outDec, outDec === 6 ? 2 : 4)} ${outSym}`
-      : `at least ${fmtUnits(BigInt(o.minAmountOut), outDec, outDec === 6 ? 2 : 4)} ${outSym}`;
+    const amtOut = `${fmtUnits(BigInt(o.amountOut ?? o.minAmountOut), outDec, outDec === 6 ? 2 : 4)} ${outSym}`;
     const acts = h('div', { class: 'acts' });
     if (o.status === 'open') {
       acts.append(
@@ -732,7 +912,13 @@ function renderOrders(): void {
         'li',
         { class: 'order' },
         h('span', { class: 'status-cell' }, h('span', { class: `status ${o.status}` }, o.status)),
-        h('div', {}, h('div', { class: 'what' }, h('b', {}, `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.ticker}`), ` ${amtIn} for ${amtOut}`), h('div', { class: 'meta' }, meta)),
+        h(
+          'div',
+          {},
+          // Words in the text face, order values in mono.
+          h('div', { class: 'what' }, h('b', {}, `${o.side === 'buy' ? 'Buy' : 'Sell'} ${o.ticker}`), ' ', h('span', { class: 'amt' }, amtIn), o.amountOut ? ' for ' : ' for at least ', h('span', { class: 'amt' }, amtOut)),
+          h('div', { class: 'meta' }, meta),
+        ),
         acts,
       ),
     );
@@ -781,19 +967,14 @@ function wire(): void {
     if (state.account && state.chainId !== 8453) void switchToBase();
     else if (!state.account) void connect();
   });
+  // The whole row is the target; the button inside it keeps the row reachable from the keyboard.
   $('markets-body').addEventListener('click', (ev) => {
-    const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-ticker]');
-    if (!btn) return;
-    state.ticker = btn.dataset.ticker!;
+    const row = (ev.target as HTMLElement).closest<HTMLElement>('tr[data-ticker]');
+    if (row) selectTicker(row.dataset.ticker!, true);
+  });
+  $('board-more').addEventListener('click', () => {
+    boardExpanded = !boardExpanded;
     renderMarkets();
-    renderTicker();
-    renderTicket();
-    void refreshFunds();
-    // On narrow screens the ticket sits above the table: bring it back into view.
-    if (window.matchMedia('(max-width: 860px)').matches) {
-      const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      $('ticket').scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
-    }
   });
   $<HTMLSelectElement>('f-ticker').addEventListener('change', (ev) => {
     state.ticker = (ev.target as HTMLSelectElement).value;
@@ -836,6 +1017,7 @@ function wire(): void {
   const es = new EventSource('/v1/stream');
   es.addEventListener('fill', (ev) => {
     const f = JSON.parse((ev as MessageEvent).data) as { maker: string; ticker: string | null };
+    void loadStats();
     if (state.account && f.maker === state.account.toLowerCase()) {
       setMsg(`Your ${f.ticker ?? ''} order filled on Base.`.replace('  ', ' '), 'ok');
       void loadOrders();
@@ -844,9 +1026,16 @@ function wire(): void {
 }
 
 async function main(): Promise<void> {
+  initSite();
   wire();
   renderClock();
   window.setInterval(renderClock, 15_000);
+  onceVisible($('stats'), () => {
+    statsVisible = true;
+    renderStats();
+  });
+  void loadStats();
+  window.setInterval(() => void loadStats(), 60_000);
   try {
     await loadConfig();
   } catch {

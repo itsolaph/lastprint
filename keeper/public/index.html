@@ -3,133 +3,328 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Lastprint · limit orders against the last close</title>
-    <meta name="description" content="Non-custodial limit orders for tokenized US stocks on Base, priced against the last official close, live only while the US market is shut." />
-    <meta name="theme-color" content="#f3f4f0" />
-    <link rel="preload" href="/fonts/geist-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <title>Lastprint: trade tokenized US stocks after the bell</title>
+    <meta name="description" content="Limit orders on tokenized US stocks on Base, priced against the last official close. Orders live only while the US market is shut and expire at the opening bell. Non-custodial." />
+    <meta name="theme-color" content="#0d1424" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Lastprint" />
+    <meta property="og:title" content="Lastprint: trade after the bell" />
+    <meta property="og:description" content="Limit orders on tokenized US stocks, priced against the last official close. They only live while Wall Street sleeps, and expire at the opening bell." />
+    <meta property="og:image" content="/img/hero.jpg" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta property="og:image:alt" content="A brass stock ticker under a glass dome on a desk at blue hour, with the Manhattan skyline in the window." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href="/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/css/app.css" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
-    <div class="tape frozen" id="tape" role="marquee" aria-label="Base prices against the last official close">
-      <div class="tape-track" id="tape-track"><span class="print"><span class="k">Loading prints</span></span></div>
-    </div>
-    <p class="state" id="state" aria-live="polite"><span><span class="dot"></span>Reading the market clock</span></p>
+    <a class="skip" href="#app">Skip to the order ticket</a>
 
-    <header class="masthead">
-      <div>
-        <h1 class="wordmark">Lastprint<span class="bar" aria-hidden="true"></span></h1>
-        <p class="pitch"><strong>NYSE closes. Base doesn't.</strong> Set the price you want relative to the last close. Your order only fires while Wall Street is asleep, and expires at the next opening bell.</p>
-      </div>
-      <div class="wallet">
-        <span class="addr" id="wallet-addr"></span>
-        <button class="btn" id="connect" type="button">Connect wallet</button>
+    <header class="nav" id="nav">
+      <a class="wordmark" href="#top">Lastprint</a>
+      <button class="btn small nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">Menu</button>
+      <div class="nav-menu" id="nav-menu">
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#how">How it works</a>
+          <a href="#markets">Markets</a>
+          <a href="#proof">Proof</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a class="btn small nav-cta" href="#app">Open the app</a>
       </div>
     </header>
 
-    <p class="notice" id="notice" hidden></p>
-
-    <main class="layout">
-      <section class="markets" aria-labelledby="markets-h">
-        <div class="section-head">
-          <h2 id="markets-h">Markets</h2>
-          <p id="markets-sub">Last official close against the Aerodrome pool price on Base</p>
+    <main>
+      <section class="hero" id="top" aria-labelledby="hero-h">
+        <div class="hero-media">
+          <picture>
+            <source srcset="/img/hero.webp" type="image/webp" />
+            <img src="/img/hero.jpg" width="1280" height="720" fetchpriority="high" decoding="async" alt="A brass stock ticker under a glass dome on a walnut desk at blue hour. Its paper tape curls off the desk, and the Manhattan skyline is lit in the window behind it." />
+          </picture>
+          <video id="hero-video" muted loop playsinline autoplay preload="metadata" poster="/img/hero.jpg" width="1280" height="720" aria-hidden="true" tabindex="-1">
+            <source src="/img/hero-loop.mp4" type="video/mp4" />
+          </video>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Ticker</th>
-              <th scope="col">Last close</th>
-              <th scope="col">Base <span class="col-mid-label">mid</span></th>
-              <th scope="col">Gap</th>
-              <th scope="col" class="col-depth">Pool depth</th>
-            </tr>
-          </thead>
-          <tbody id="markets-body">
-            <tr class="empty"><td colspan="5">Loading closes and pool prices…</td></tr>
-          </tbody>
-        </table>
+
+        <div class="hero-copy">
+          <h1 id="hero-h">Trade after the bell.</h1>
+          <p class="hero-lede">Limit orders on tokenized US stocks, priced against the last official close. They only live while Wall Street sleeps, and expire at the opening bell.</p>
+          <div class="hero-actions">
+            <a class="btn primary" href="#app">Place an order</a>
+            <a class="btn ghost" href="#proof">See a real fill</a>
+          </div>
+          <p class="hero-state" id="state" aria-live="polite">Reading the market clock</p>
+        </div>
+
+        <div class="tape-wrap">
+          <div class="tape" id="tape" role="group" aria-label="Last official closes and the gap to the live Base price">
+            <div class="tape-track" id="tape-track">
+              <span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span><span class="sk sk-print"></span>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <aside class="ticket" id="ticket" aria-labelledby="ticket-h">
-        <div class="ticket-head">
-          <h2 id="ticket-h">Order ticket</h2>
-          <span class="serial" id="ticket-serial">On Base</span>
+      <section class="section how" id="how" aria-labelledby="how-h">
+        <div class="wrap">
+          <header class="section-head split reveal">
+            <h2 id="how-h">From the closing bell to the opening bell.</h2>
+            <p>An order lives for exactly one closed-market window. The times below are New York time.</p>
+          </header>
+
+          <ol class="timeline">
+            <li class="step reveal" id="step-close">
+              <picture>
+                <source srcset="/img/dusk.webp" type="image/webp" />
+                <img class="frame" src="/img/dusk.jpg" width="720" height="1280" loading="lazy" decoding="async" alt="A small brass hand bell and a curl of paper tape on a walnut desk, lit by low golden afternoon sun through an office window." />
+              </picture>
+              <div class="step-rail" aria-hidden="true"></div>
+              <p class="step-flag" id="step-close-flag"></p>
+              <h3 class="step-time" id="step-close-time">4:00 pm</h3>
+              <p class="step-local" id="step-close-local">New York time</p>
+              <p class="step-text">The bell rings. We record the official close for every listed stock.</p>
+            </li>
+            <li class="step reveal" id="step-night">
+              <picture>
+                <source srcset="/img/midnight.webp" type="image/webp" />
+                <img class="frame" src="/img/midnight.jpg" width="720" height="1280" loading="lazy" decoding="async" alt="A coil of paper tape on the same desk at midnight, in blue light from the lit office towers outside." />
+              </picture>
+              <div class="step-rail" aria-hidden="true"></div>
+              <p class="step-flag" id="step-night-flag"></p>
+              <h3 class="step-time">Overnight</h3>
+              <p class="step-local" id="step-night-local">Nights, weekends and US holidays</p>
+              <p class="step-text">You set a price relative to that close. A keeper fills your order on Base the moment the pool reaches it.</p>
+            </li>
+            <li class="step reveal" id="step-open">
+              <picture>
+                <source srcset="/img/morning.webp" type="image/webp" />
+                <img class="frame" src="/img/morning.jpg" width="720" height="1280" loading="lazy" decoding="async" alt="A cup of black coffee and a torn strip of paper tape on the desk in pale morning light, the skyline clear behind the glass." />
+              </picture>
+              <div class="step-rail" aria-hidden="true"></div>
+              <p class="step-flag" id="step-open-flag"></p>
+              <h3 class="step-time" id="step-open-time">9:30 am</h3>
+              <p class="step-local" id="step-open-local">New York time</p>
+              <p class="step-text">Not filled by the opening bell? The order dies on its own. Nothing to cancel.</p>
+            </li>
+          </ol>
         </div>
-        <form id="ticket-form" novalidate>
-          <div class="fields">
-            <div class="field">
-              <span class="lbl" id="side-lbl">Side</span>
-              <div class="side" role="radiogroup" aria-labelledby="side-lbl">
-                <input type="radio" name="side" id="side-buy" value="buy" checked /><label for="side-buy">Buy</label>
-                <input type="radio" name="side" id="side-sell" value="sell" /><label for="side-sell">Sell</label>
-              </div>
-            </div>
-            <div class="field">
-              <label for="f-ticker">Ticker</label>
-              <select id="f-ticker" name="ticker"></select>
-            </div>
-            <div class="field wide">
-              <label for="f-amount" id="amount-lbl">Amount (USDC)</label>
-              <input id="f-amount" name="amount" class="num" inputmode="decimal" autocomplete="off" placeholder="0.00" />
-              <span class="help" id="amount-help"></span>
-            </div>
-            <div class="field wide">
-              <label for="f-limit">Limit vs last close</label>
-              <div class="limit-row">
-                <input id="f-limit" name="limit" class="num" inputmode="decimal" autocomplete="off" value="-1.00" aria-describedby="limit-help" />
-                <span class="unit">%</span>
-              </div>
-              <span class="help" id="limit-help"></span>
-            </div>
-            <div class="field">
-              <span class="lbl">Expires</span>
-              <span class="value" id="f-expiry">Next opening bell</span>
-              <span class="help" id="f-expiry-local"></span>
-            </div>
-            <div class="field">
-              <span class="lbl">Bound to multiplier</span>
-              <span class="value" id="f-mult">–</span>
-              <span class="help">From ActionFeed</span>
+      </section>
+
+      <section class="section board" id="markets" aria-labelledby="markets-h">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <h2 id="markets-h">Tonight's board</h2>
+            <p id="markets-sub">Last official close against the live Base price.</p>
+          </header>
+
+          <div class="reveal">
+            <table class="board-table collapsed" id="board-table">
+              <thead>
+                <tr>
+                  <th scope="col">Stock</th>
+                  <th scope="col">Last close</th>
+                  <th scope="col">Base price</th>
+                  <th scope="col">Gap</th>
+                  <th scope="col">Pool depth</th>
+                </tr>
+              </thead>
+              <tbody id="markets-body">
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+                <tr class="skel"><td><span class="sk sk-name"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num"></span></td><td><span class="sk sk-num short"></span></td><td><span class="sk sk-num short"></span></td></tr>
+              </tbody>
+            </table>
+            <div class="board-foot">
+              <button class="btn small" id="board-more" type="button" aria-expanded="false" aria-controls="markets-body" hidden>Show all stocks</button>
+              <p class="board-note" id="board-note">Pick a stock to load it into the order ticket.</p>
             </div>
           </div>
-          <dl class="estimate">
-            <dt>You receive at least</dt>
-            <dd class="big" id="est-min">–</dd>
-            <dt>At the current Base price</dt>
-            <dd id="est-now">–</dd>
-            <dt>Your balance</dt>
-            <dd id="est-bal">–</dd>
-          </dl>
-          <div class="actions">
-            <div class="steps">
-              <button class="btn" type="button" id="btn-approve"><span class="step-n">1</span>Approve</button>
-              <button class="btn primary" type="submit" id="btn-sign"><span class="step-n">2</span>Sign order</button>
-            </div>
-            <p class="ticket-msg" id="ticket-msg" role="status"></p>
+        </div>
+      </section>
+
+      <section class="band app" id="app" aria-labelledby="app-h">
+        <div class="wrap app-grid">
+          <div class="app-intro reveal">
+            <h2 id="app-h">Set your price.</h2>
+            <ul class="facts">
+              <li><strong>Your funds stay in your wallet.</strong> The contract pulls them only at the moment of the fill, and only for the order you signed.</li>
+              <li><strong>Bound to the stock's multiplier.</strong> ActionFeed tracks splits and dividends, so an order signed against one multiplier never fills against another.</li>
+              <li><strong>Gone at the opening bell.</strong> Once New York opens, the order can no longer fill.</li>
+            </ul>
           </div>
-        </form>
-        <div class="stamp" id="stamp" hidden></div>
-      </aside>
+
+          <div class="app-main">
+            <p class="notice" id="notice" hidden></p>
+
+            <div class="ticket" id="ticket" role="region" aria-labelledby="ticket-h">
+              <div class="ticket-head">
+                <div class="ticket-title">
+                  <h3 id="ticket-h">Order ticket</h3>
+                  <span class="serial" id="ticket-serial">On Base</span>
+                </div>
+                <div class="wallet">
+                  <span class="addr" id="wallet-addr"></span>
+                  <button class="btn small" id="connect" type="button">Connect wallet</button>
+                </div>
+              </div>
+              <form id="ticket-form" novalidate>
+                <div class="fields">
+                  <div class="field">
+                    <span class="lbl" id="side-lbl">Side</span>
+                    <div class="side" role="radiogroup" aria-labelledby="side-lbl">
+                      <input type="radio" name="side" id="side-buy" value="buy" checked /><label for="side-buy">Buy</label>
+                      <input type="radio" name="side" id="side-sell" value="sell" /><label for="side-sell">Sell</label>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="f-ticker">Stock</label>
+                    <select id="f-ticker" name="ticker"></select>
+                  </div>
+                  <div class="field wide">
+                    <label for="f-amount" id="amount-lbl">Amount (USDC)</label>
+                    <input id="f-amount" name="amount" class="num" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-describedby="amount-help" />
+                    <span class="help" id="amount-help"></span>
+                  </div>
+                  <div class="field wide">
+                    <label for="f-limit">Limit against the last close</label>
+                    <div class="limit-row">
+                      <input id="f-limit" name="limit" class="num" inputmode="decimal" autocomplete="off" value="-1.00" aria-describedby="limit-help" />
+                      <span class="unit" aria-hidden="true">%</span>
+                    </div>
+                    <span class="help" id="limit-help"></span>
+                  </div>
+                  <div class="field">
+                    <span class="lbl">Expires</span>
+                    <span class="value" id="f-expiry">Next opening bell</span>
+                    <span class="help" id="f-expiry-local"></span>
+                  </div>
+                  <div class="field">
+                    <span class="lbl">Bound to multiplier</span>
+                    <span class="value" id="f-mult">–</span>
+                    <span class="help">From ActionFeed</span>
+                  </div>
+                </div>
+                <dl class="estimate">
+                  <dt>You receive at least</dt>
+                  <dd class="big" id="est-min">–</dd>
+                  <dt>At the current Base price</dt>
+                  <dd id="est-now">–</dd>
+                  <dt>Your balance</dt>
+                  <dd id="est-bal">–</dd>
+                </dl>
+                <div class="actions">
+                  <div class="steps">
+                    <button class="btn" type="button" id="btn-approve"><span class="step-n">1</span>Approve</button>
+                    <button class="btn primary" type="submit" id="btn-sign"><span class="step-n">2</span>Sign order</button>
+                  </div>
+                  <p class="ticket-msg" id="ticket-msg" role="status"></p>
+                </div>
+              </form>
+              <div class="stamp" id="stamp" hidden></div>
+            </div>
+
+            <section class="orders" aria-labelledby="orders-h">
+              <div class="orders-head">
+                <h3 id="orders-h">My orders</h3>
+                <p id="orders-sub"></p>
+              </div>
+              <div id="orders"><p class="empty-orders">Connect a wallet to see your orders.</p></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="section proof" id="proof" aria-labelledby="proof-h">
+        <div class="wrap proof-grid">
+          <picture class="proof-art reveal">
+            <source srcset="/img/hero.webp" type="image/webp" />
+            <img class="frame" src="/img/hero.jpg" width="1280" height="720" loading="lazy" decoding="async" alt="The brass stock ticker under its glass dome, paper tape running out of it, with the skyline at dusk behind." />
+          </picture>
+
+          <div class="proof-body reveal">
+            <h2 id="proof-h">Already filled on Base mainnet.</h2>
+            <dl class="stats" id="stats">
+              <div class="stat"><dt>orders signed</dt><dd id="stat-orders"><span class="sk sk-stat"></span></dd></div>
+              <div class="stat"><dt>fills onchain</dt><dd id="stat-fills"><span class="sk sk-stat"></span></dd></div>
+              <div class="stat"><dt>volume (USD)</dt><dd id="stat-volume"><span class="sk sk-stat"></span></dd></div>
+              <div class="stat"><dt>makers</dt><dd id="stat-makers"><span class="sk sk-stat"></span></dd></div>
+            </dl>
+            <p class="stats-source" id="stats-source"></p>
+
+            <div class="receipt-wrap">
+              <div class="receipt">
+                <p class="receipt-title">The first fill</p>
+                <p class="receipt-line">Bought NVDAc with 5 USDC. Limit $170.00 against close $166.19. Filled while the market was shut.</p>
+                <p class="receipt-links">
+                  <a href="https://basescan.org/tx/0x4d6440b8055f7a4b373ce9a7eeb0ac12d0f7baa2dd278f409acb63728c37b872" rel="noopener">Fill transaction on Basescan</a>
+                  <a href="https://basescan.org/address/0x7def4bbDdCe5670485f513615Cd5cAD97bB27DB3" rel="noopener">Contract on Basescan</a>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section faq" id="faq" aria-labelledby="faq-h">
+        <div class="wrap faq-grid">
+          <h2 id="faq-h" class="reveal">Fair questions</h2>
+          <div class="faq-list reveal">
+            <details>
+              <summary>Why only when the market is closed?</summary>
+              <div class="answer">
+                <p>Because that is when the close means something. While New York trades, the stock has a live exchange price and yesterday's close is stale. Between the closing bell and the next opening bell, the last official close is the one fixed reference, and the tokens keep trading on Base. An order is valid only inside that window, and the contract checks the window on every fill.</p>
+              </div>
+            </details>
+            <details>
+              <summary>What is the last close, and where does it come from?</summary>
+              <div class="answer">
+                <p>It is the official closing price of the regular US session for each stock. Lastprint reads it from the Yahoo Finance chart API, with the Nasdaq.com historical API as the fallback, and shows the source and session date next to every price. Both are free, unofficial endpoints, so the close is shown for reference. What binds is the minimum amount written into the order you sign.</p>
+              </div>
+            </details>
+            <details>
+              <summary>What happens on a split or dividend?</summary>
+              <div class="answer">
+                <p>Tokenized stocks carry a multiplier that changes on splits and dividend adjustments. Every order is bound to the multiplier you saw when you signed it. ActionFeed pauses fills when a corporate action is pending or the issuer has paused transfers, so an order signed against one multiplier never fills against another.</p>
+              </div>
+            </details>
+            <details>
+              <summary>Who holds my money?</summary>
+              <div class="answer">
+                <p>Nobody. Your tokens stay in your wallet until the fill. At fill time the contract pulls exactly the amount you approved, swaps it through an allowlisted router and sends the result straight to you. The contract has no owner, no admin and no stored funds.</p>
+              </div>
+            </details>
+            <details>
+              <summary>What does it cost?</summary>
+              <div class="answer">
+                <p>Lastprint charges no fee. You pay gas once, for the approval. Signing an order is free, and the keeper pays the gas for the fill. Cancelling in the app is free too; the optional onchain cancel is a transaction and costs gas.</p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
     </main>
 
-    <section class="orders" aria-labelledby="orders-h">
-      <div class="section-head">
-        <h2 id="orders-h">My orders</h2>
-        <p id="orders-sub"></p>
-      </div>
-      <div id="orders"><p class="empty-orders">Connect a wallet to see your orders.</p></div>
-    </section>
-
     <footer class="foot">
-      <div>
-        <p><strong>Experimental and unaudited.</strong> Smart contracts can fail; only use amounts you can afford to lose. Not available to U.S. persons or where prohibited. Nothing here is investment advice: Lastprint shows data and executes the order you sign. It never holds funds, charges no fees, and has no token.</p>
-        <p>Lastprint is an independent project and is not affiliated with Coinbase, Base, Aerodrome or Chainlink. Corporate-action guard by <a href="https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2" rel="noopener">ActionFeed</a>.</p>
-      </div>
-      <div>
-        <p>Closes: Yahoo Finance chart API, Nasdaq.com fallback. Pools: Aerodrome Slipstream on Base, depth from DexScreener.</p>
-        <p><a id="repo-link" href="https://github.com/itsolaph/lastprint" rel="noopener">Source on GitHub</a> · MIT license</p>
+      <div class="wrap foot-grid">
+        <div class="foot-brand">
+          <p class="wordmark">Lastprint</p>
+          <p>Limit orders against the last official close, on Base.</p>
+        </div>
+        <div class="foot-legal">
+          <p><strong>Experimental and unaudited.</strong> Smart contracts can fail; only use amounts you can afford to lose. Not available to U.S. persons or where prohibited. Nothing here is investment advice: Lastprint shows data and executes the order you sign. It never holds funds, charges no fees, and has no token.</p>
+          <p>Lastprint is an independent project and is not affiliated with Coinbase, Base, Aerodrome or Chainlink. Corporate-action guard by <a href="https://basescan.org/address/0xC455472cd39029F8309F0D762Ee587D65A596Fe2" rel="noopener">ActionFeed</a>.</p>
+        </div>
+        <div class="foot-meta">
+          <p>Closes: Yahoo Finance chart API, Nasdaq.com fallback. Pools: Aerodrome Slipstream on Base, depth from DexScreener.</p>
+          <p><a id="repo-link" href="https://github.com/itsolaph/lastprint" rel="noopener">Source on GitHub</a>, MIT license.</p>
+          <p>Photography generated for this project.</p>
+        </div>
       </div>
     </footer>
 

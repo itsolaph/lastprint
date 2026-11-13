@@ -11,5 +11,6 @@ export function chromiumPath(): string {
 }
 
 export function launch(): Promise<Browser> {
-  return chromium.launch({ executablePath: chromiumPath(), headless: true });
+  // --no-sandbox: these scripts only ever open our own local pages, often from a container without user namespaces.
+  return chromium.launch({ executablePath: chromiumPath(), headless: true, args: ['--no-sandbox'] });
 }

@@ -1,25 +1,45 @@
 /**
- * Screenshot the running web app at 1440 and 390 px and fail on horizontal overflow.
- *   node scripts/screens.ts [--url http://127.0.0.1:18797] [--out ../docs/screens]
+ * Screenshot the running web app (landing + app on one page) and fail on horizontal overflow.
+ *   node scripts/screens.ts [--url http://127.0.0.1:18797] [--out <dir>] [--sections <dir>]
  *
- * States captured:
- *   readonly-*   the instance as served (no contract configured -> ordering off), live data
- *   ticket-*     demo: a mocked contract address and an injected mock wallet (no real wallet, no transactions)
- *   open-*       demo: browser clock set inside a US session (tape frozen, ordering paused)
+ * Saved to --out (default docs/screens):
+ *   v3-hero-1440x900     the first viewport, as served
+ *   v3-full-1440 / -390  the full page, as served, live data
+ *   v3-ticket-1440/-390  the #app section. Demo: an injected mock wallet and mocked order list (no real wallet, no
+ *                        transactions), browser clock set to a New York night so the ticket is in its "approve" step
+ *   v3-open-1440         the full page with the browser clock set inside a US session (ordering paused)
+ *   gap-report-1200x675  the /report card
+ *
+ * --sections <dir> also saves one crop per page section at both widths, for close review.
  */
 import { mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import type { Page } from 'playwright-core';
+import type { BrowserContext, Page } from 'playwright-core';
 import { launch } from './browser.ts';
 
-const { values } = parseArgs({ options: { url: { type: 'string', default: 'http://127.0.0.1:18797' }, out: { type: 'string', default: '../docs/screens' } } });
+const { values } = parseArgs({
+  options: {
+    url: { type: 'string', default: 'http://127.0.0.1:18797' },
+    out: { type: 'string', default: fileURLToPath(new URL('../../docs/screens', import.meta.url)) },
+    sections: { type: 'string' },
+  },
+});
 const url = values.url!;
 const out = resolve(values.out!);
+const sectionsDir = values.sections ? resolve(values.sections) : null;
 mkdirSync(out, { recursive: true });
+if (sectionsDir) mkdirSync(sectionsDir, { recursive: true });
 
-const DEMO_CONTRACT = '0x000000000000000000000000000000000000dEaD';
+const PUBLIC_IMG = fileURLToPath(new URL('../public/img/', import.meta.url));
+const IMG_TYPES: Record<string, string> = { '.jpg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4' };
+
 const DEMO_MAKER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+/** Browser clocks for the demo states: Thursday night in New York (market shut), and inside Friday's session. */
+const CLOSED_AT = '2026-11-13T03:00:00Z';
+const OPEN_AT = '2026-11-13T16:05:00Z';
 
 /** Minimal EIP-1193 mock: Base, one account, 2,500 USDC / 12 tokens balance, zero allowance. */
 const MOCK_WALLET = `
@@ -45,12 +65,8 @@ const MOCK_WALLET = `
   })();
 `;
 
+/** Demo order list for the mock wallet. The instance's own /v1/config is used as served. */
 async function demoRoutes(page: Page): Promise<void> {
-  await page.route('**/v1/config', async (route) => {
-    const res = await route.fetch();
-    const cfg = await res.json();
-    await route.fulfill({ json: { ...cfg, contract: DEMO_CONTRACT, orderingEnabled: true, keeperMode: 'watch', telegramBot: 'LastprintBot' } });
-  });
   await page.route('**/v1/orders?maker=*', (route) =>
     route.fulfill({
       json: {
@@ -64,54 +80,197 @@ async function demoRoutes(page: Page): Promise<void> {
   );
 }
 
-async function shoot(page: Page, name: string, width: number): Promise<void> {
-  await page.setViewportSize({ width, height: width > 600 ? 1000 : 900 });
-  await page.waitForTimeout(400);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  if (overflow > 0) throw new Error(`${name}: horizontal overflow of ${overflow}px at ${width}px`);
-  const file = join(out, `${name}-${width}.png`);
+/**
+ * A keeper process started before .jpg/.webp/.mp4 were added to its static types answers 404 for /img/*.
+ * In that case the photographs are read from keeper/public/img on disk so the page can still be reviewed.
+ */
+let imagesFromDisk: boolean | null = null;
+async function imageFallback(ctx: BrowserContext): Promise<void> {
+  if (imagesFromDisk === null) {
+    const probe = await fetch(`${url}/img/hero.jpg`).catch(() => null);
+    imagesFromDisk = !probe?.ok;
+    if (imagesFromDisk) console.warn(`NOTE: ${url}/img/hero.jpg is not served by the running process (restart it to pick up the new static types). Photographs in these screenshots are read from keeper/public/img on disk.`);
+  }
+  if (!imagesFromDisk) return;
+  await ctx.route('**/img/*', async (route) => {
+    const name = basename(new URL(route.request().url()).pathname);
+    const contentType = IMG_TYPES[extname(name)];
+    try {
+      if (!contentType) throw new Error('unknown type');
+      await route.fulfill({ body: await readFile(join(PUBLIC_IMG, name)), contentType });
+    } catch {
+      await route.continue();
+    }
+  });
+}
+
+async function open(ctx: BrowserContext, prepare?: (page: Page) => Promise<void>): Promise<Page> {
+  await imageFallback(ctx);
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.warn(`page error: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() === 'error') console.warn(`console error: ${m.text()}`);
+  });
+  if (prepare) await prepare(page);
+  await page.goto(url, { waitUntil: 'networkidle' });
+  // Real data on the tape and the board before anything is shot.
+  await page.waitForSelector('#tape-track .print .t');
+  await page.waitForSelector('#markets-body .pick');
+  return page;
+}
+
+/** Walk the page once so sections reveal, lazy photographs load and the stats count up; then return to the top. */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const step = Math.round(window.innerHeight * 0.7);
+    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
+      window.scrollTo({ top: y, behavior: 'instant' });
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+  await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0), undefined, { timeout: 15_000 });
+  await page.waitForTimeout(1600);
+}
+
+async function assertNoOverflow(page: Page, name: string): Promise<void> {
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+  if (scrollWidth !== clientWidth) throw new Error(`${name}: horizontal overflow (scrollWidth ${scrollWidth} != clientWidth ${clientWidth})`);
+}
+
+async function shootFull(page: Page, name: string): Promise<void> {
+  await assertNoOverflow(page, name);
+  const file = join(out, `${name}.png`);
   await page.screenshot({ path: file, fullPage: true, animations: 'disabled' });
-  console.log(`saved ${file} (no horizontal overflow)`);
+  console.log(`saved ${file} (scrollWidth == clientWidth)`);
+}
+
+/** One section, cut out of the full page as it lies at scroll position 0 (so the fixed nav never covers it). */
+async function shootSection(page: Page, selector: string, file: string): Promise<void> {
+  const clip = await page.evaluate((sel) => {
+    const r = document.querySelector(sel)!.getBoundingClientRect();
+    return { x: 0, y: Math.round(r.top + window.scrollY), width: document.documentElement.clientWidth, height: Math.round(r.height) };
+  }, selector);
+  await page.screenshot({ path: file, fullPage: true, clip, animations: 'disabled' });
+}
+
+async function shootSections(page: Page, width: number, label: string): Promise<void> {
+  if (!sectionsDir) return;
+  for (const sel of ['#top', '#how', '#markets', '#app', '#proof', '#faq', 'footer.foot']) {
+    await shootSection(page, sel, join(sectionsDir, `${label}-${width}-${sel.replace(/[^a-z]/g, '')}.png`));
+  }
+  console.log(`saved section crops (${label}, ${width}px) to ${sectionsDir}`);
 }
 
 const browser = await launch();
 try {
-  for (const width of [1440, 390]) {
-    // 1. As served.
+  // First viewport at 1440x900.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+    const page = await open(ctx);
+    await page.waitForTimeout(1500);
+    await assertNoOverflow(page, 'v3-hero-1440x900');
+    const file = join(out, 'v3-hero-1440x900.png');
+    await page.screenshot({ path: file, animations: 'disabled' });
+    console.log(`saved ${file}`);
+    console.log(`hero video: ${await page.evaluate(() => { const v = document.querySelector('#hero-video'); return v ? (v.classList.contains('is-playing') ? 'playing over the still' : 'present, not playing') : 'removed (could not load, or reduced motion)'; })}`);
+    await ctx.close();
+  }
+
+  for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+    // As served, live data.
     {
-      const ctx = await browser.newContext({ deviceScaleFactor: 1, reducedMotion: 'no-preference' });
-      const page = await ctx.newPage();
-      await page.goto(url, { waitUntil: 'networkidle' });
-      await page.waitForSelector('#markets-body .pick');
-      await shoot(page, 'readonly', width);
+      const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+      const page = await open(ctx);
+      await settle(page);
+      await shootFull(page, `v3-full-${width}`);
+      await shootSections(page, width, 'served');
       await ctx.close();
     }
-    // 2. Demo wallet + configured contract: the ticket in its "approve" step.
+    // Demo wallet: the ticket in its "approve" step, with orders listed.
     {
-      const ctx = await browser.newContext({ deviceScaleFactor: 1 });
+      const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
       await ctx.addInitScript(MOCK_WALLET);
-      const page = await ctx.newPage();
-      await demoRoutes(page);
-      await page.goto(url, { waitUntil: 'networkidle' });
-      await page.waitForSelector('#markets-body .pick');
+      const page = await open(ctx, async (p) => {
+        await p.clock.install({ time: new Date(CLOSED_AT) });
+        await demoRoutes(p);
+      });
       await page.fill('#f-amount', '1000');
       await page.fill('#f-limit', '-1.50');
-      await page.waitForTimeout(800);
-      await shoot(page, 'ticket', width);
-      await ctx.close();
-    }
-    // 3. Market open (browser clock moved into Friday's session).
-    {
-      const ctx = await browser.newContext({ deviceScaleFactor: 1 });
-      const page = await ctx.newPage();
-      await page.clock.install({ time: new Date('2026-11-13T16:05:00Z') });
-      await demoRoutes(page);
-      await page.goto(url, { waitUntil: 'networkidle' });
-      await page.waitForSelector('#markets-body .pick');
-      await shoot(page, 'open', width);
+      await settle(page);
+      await assertNoOverflow(page, `v3-ticket-${width}`);
+      const file = join(out, `v3-ticket-${width}.png`);
+      await shootSection(page, '#app', file);
+      console.log(`saved ${file}`);
       await ctx.close();
     }
   }
+
+  // Market open (browser clock moved into Friday's session).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+    const page = await open(ctx, async (p) => {
+      await p.clock.install({ time: new Date(OPEN_AT) });
+      await demoRoutes(p);
+    });
+    await settle(page);
+    await shootFull(page, 'v3-open-1440');
+    await shootSections(page, 1440, 'open');
+    await ctx.close();
+  }
+
+  // Review-only states: first paint before any data, keyboard focus, row hover, an open FAQ answer.
+  if (sectionsDir) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+    await imageFallback(ctx);
+    const page = await ctx.newPage();
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    await page.route(/\/v1\/(markets|stats)$/, async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: join(sectionsDir, 'skeleton-1440-top.png') });
+    await shootSection(page, '#markets', join(sectionsDir, 'skeleton-1440-markets.png'));
+    await shootSection(page, '#proof', join(sectionsDir, 'skeleton-1440-proof.png'));
+    release();
+    await page.waitForSelector('#markets-body .pick');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.screenshot({ path: join(sectionsDir, 'focus-1440-nav.png'), clip: { x: 0, y: 0, width: 1440, height: 120 } });
+    await page.focus('.hero-actions .btn.ghost');
+    await page.keyboard.press('Shift+Tab');
+    await page.screenshot({ path: join(sectionsDir, 'focus-1440-hero.png'), clip: { x: 0, y: 500, width: 760, height: 180 } });
+    await page.click('#faq details:nth-of-type(2) summary');
+    await page.waitForTimeout(300);
+    await shootSection(page, '#faq', join(sectionsDir, 'open-1440-faq.png'));
+    await page.locator('#markets').scrollIntoViewIfNeeded();
+    await page.focus('#markets-body tr[data-ticker="GOOGL"] .pick');
+    await page.hover('#markets-body tr[data-ticker="AMZN"] td.base');
+    await page.screenshot({ path: join(sectionsDir, 'hover-1440-markets.png') });
+    await ctx.close();
+  }
+
+  // Mobile menu open, and reduced motion (tape static, no reveals, no video).
+  if (sectionsDir) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+    const page = await open(ctx);
+    await page.click('#nav-toggle');
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: join(sectionsDir, 'menu-390.png'), animations: 'disabled' });
+    await page.click('#nav-toggle');
+    await page.mouse.move(200, 600);
+    await page.click('#faq details:first-of-type summary');
+    await settle(page);
+    await assertNoOverflow(page, 'reduced-motion-390');
+    await page.screenshot({ path: join(sectionsDir, 'reduced-390.png'), fullPage: true });
+    console.log(`saved menu and reduced-motion shots to ${sectionsDir}`);
+    await ctx.close();
+  }
+
   // Report card.
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 675 } });

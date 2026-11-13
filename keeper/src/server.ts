@@ -60,6 +60,9 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.woff2': 'font/woff2',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
   '.svg': 'image/svg+xml',
   '.txt': 'text/plain; charset=utf-8',
   '.ico': 'image/x-icon',
@@ -84,8 +87,18 @@ async function serveFile(c: Context, urlPath: string): Promise<Response | null> 
     const s = await stat(full);
     if (!s.isFile()) return null;
     const body = await readFile(full);
-    const cache = /\/(fonts|js)\//.test(full) ? 'public, max-age=3600' : 'no-cache';
-    return c.body(body, 200, { 'content-type': type, 'cache-control': cache });
+    const cache = /\/(fonts|js|img)\//.test(full) ? 'public, max-age=3600' : 'no-cache';
+    const headers = { 'content-type': type, 'cache-control': cache };
+    // Safari only plays <video> from servers that answer byte ranges.
+    const range = type.startsWith('video/') ? /^bytes=(\d*)-(\d*)$/.exec(c.req.header('range') ?? '') : null;
+    if (range && (range[1] || range[2])) {
+      const size = body.length;
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (start > end || start >= size) return c.body(null, 416, { 'content-range': `bytes */${size}` });
+      return c.body(body.subarray(start, end + 1), 206, { ...headers, 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${size}` });
+    }
+    return c.body(body, 200, type.startsWith('video/') ? { ...headers, 'accept-ranges': 'bytes' } : headers);
   } catch {
     return null;
   }

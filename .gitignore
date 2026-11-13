@@ -29,3 +29,4 @@ keeper/reports/
 .DS_Store
 contracts/lib/
 .gitmodules
+.brief/

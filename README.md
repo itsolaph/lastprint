@@ -6,7 +6,7 @@ Lastprint gives you non-custodial limit orders for tokenized US stocks (Coinbase
 
 Lastprint is an independent project. It is not affiliated with Coinbase, Base, Aerodrome or Chainlink. It does not pick stocks or give advice, holds no funds, and has no token, points or fees.
 
-![Order ticket, 1440 px](docs/screens/ticket-1440.png)
+![Lastprint landing page, first viewport at 1440 px](docs/screens/v3-hero-1440x900.png)
 
 ## Why off-hours
 
@@ -68,7 +68,8 @@ Note: the older Slipstream deployments listed in [aerodrome-finance/slipstream](
 - **Base prices:** pool `slot0` for the mid, and the Slipstream MetaQuoter for executable quotes at a $1,000 reference size.
 - **Markets and pool depth:** the [DexScreener API](https://docs.dexscreener.com), filtered to pools with ≥ $100k liquidity whose factory is the Slipstream V3 factory and whose token reports a non-zero ActionFeed multiplier. Coinbase-wrapped crypto that shares the B20 address space (cbZEC, cbHYPE) is excluded.
 - **Corporate actions:** ActionFeed.
-- **Fonts:** Geist and Geist Mono (SIL Open Font License 1.1, licenses in `keeper/public/fonts/`).
+- **Fonts:** Bricolage Grotesque, Geist and Geist Mono (SIL Open Font License 1.1, licenses in `keeper/public/fonts/`).
+- **Photography:** the images in `keeper/public/img/` were generated for this project.
 - **Libraries:** OpenZeppelin Contracts (MIT), forge-std (MIT/Apache-2.0), viem (MIT), Hono (MIT), esbuild (MIT).
 
 Chainlink publishes B20 Total Return Value feeds on Base, but Lastprint does not depend on them.
@@ -104,7 +105,7 @@ Other scripts:
 ```sh
 pnpm --dir keeper markets:refresh    # rebuild keeper/markets.json from DexScreener + onchain checks
 pnpm --dir keeper gap-report         # plain-text gap report + 1200x675 PNG of /report (needs the server running)
-pnpm --dir keeper screens            # Playwright screenshots at 1440 and 390 px into docs/screens/
+pnpm --dir keeper screens            # Playwright screenshots at 1440 and 390 px into docs/screens/v3-*.png (needs the server running)
 ```
 
 ### API
