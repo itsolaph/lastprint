@@ -15,6 +15,7 @@ import {
 } from 'viem';
 import { base } from 'viem/chains';
 import { erc20Abi, lastprintAbi } from '../src/abis.ts';
+import { DATA_SUFFIX } from '../src/shared/attribution.ts';
 import { CANCEL_TYPES, ORDER_TYPES, makeNonce, orderDomain, orderToJson, type Order } from '../src/shared/eip712.ts';
 import { closedWindow, currentSession, isUsMarketOpen, marketState, nextSession, type MarketState } from '../src/shared/market-clock.ts';
 import { MAX_LIMIT_BPS, WAD, formatFixed, limitPerShareE8, minAmountOutFor, parseDecimal, type Side } from '../src/shared/pricing.ts';
@@ -478,7 +479,7 @@ function clients(): { pub: PublicClient; wallet: WalletClient } {
   const transport = custom(state.provider!);
   return {
     pub: createPublicClient({ chain: base, transport }) as PublicClient,
-    wallet: createWalletClient({ chain: base, transport, account: state.account! }),
+    wallet: createWalletClient({ chain: base, transport, account: state.account!, dataSuffix: DATA_SUFFIX }),
   };
 }
 

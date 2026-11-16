@@ -23,6 +23,7 @@ import type { Bus } from './events.ts';
 import type { MarketDef } from './markets.ts';
 import { isUsMarketOpen } from './shared/market-clock.ts';
 import { clearsWithMargin } from './shared/pricing.ts';
+import { DATA_SUFFIX } from './shared/attribution.ts';
 
 export type Decision =
   | { action: 'expire'; reason: string }
@@ -133,7 +134,7 @@ export class Keeper {
     this.log = log;
     if (cfg.keeperPrivateKey) {
       this.account = privateKeyToAccount(cfg.keeperPrivateKey, { nonceManager });
-      this.wallet = createWalletClient({ account: this.account, chain: base, transport: http(cfg.rpcUrl, { retryCount: 3, retryDelay: 500 }) });
+      this.wallet = createWalletClient({ account: this.account, chain: base, transport: http(cfg.rpcUrl, { retryCount: 3, retryDelay: 500 }), dataSuffix: DATA_SUFFIX });
       this.log(`keeper: sending from ${this.account.address}`);
     } else {
       this.account = null;
