@@ -8,18 +8,25 @@
     "version": "1",
     "name": "Lastprint",
     "homeUrl": "https://lastprint.trade/",
-    "iconUrl": "https://lastprint.trade/favicon.svg",
-    "splashImageUrl": "https://lastprint.trade/favicon.svg",
+    "iconUrl": "https://lastprint.trade/icon.png",
+    "splashImageUrl": "https://lastprint.trade/splash.png",
     "splashBackgroundColor": "#f3f4f0",
     "subtitle": "Limit orders against the last close",
     "description": "Non-custodial limit orders for tokenized US stocks on Base, priced against the last official close and live only while the US market is shut.",
     "primaryCategory": "finance",
-    "tags": ["stocks", "limit-orders", "base"],
-    "heroImageUrl": "https://lastprint.trade/og.png",
+    "tags": [
+      "stocks",
+      "limit-orders",
+      "base"
+    ],
+    "heroImageUrl": "https://lastprint.trade/og-card.png",
     "tagline": "NYSE closes. Base doesn't.",
     "ogTitle": "Lastprint",
     "ogDescription": "Limit orders against the last close, live only while Wall Street sleeps.",
-    "noindex": true,
-    "requiredChains": ["eip155:8453"]
+    "noindex": false,
+    "requiredChains": [
+      "eip155:8453"
+    ],
+    "ogImageUrl": "https://lastprint.trade/og-card.png"
   }
 }
